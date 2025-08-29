@@ -35,6 +35,51 @@ When random.choice([True, False]) returns True:
   ]
 }
 ```
+
+* Lambda B
+Accepted Order (successful S3 save)
+```bash{
+  "status": "accepted",
+  "order_id": "12345",
+  "customer": "John Doe",
+  "items": [
+    {"item_id": "A1", "quantity": 2},
+    {"item_id": "B2", "quantity": 1}
+  ],
+  "total": 59.99
+}
+```
+
+This will pass, save the order to S3, and return:
+
+```bash{
+  "status": "success",
+  "file": "orders/order_<timestamp>.json"
+}
+```
+2️⃣ Rejected Order (triggers notification)
+```bash{
+  "status": "rejected",
+  "order_id": "12346",
+  "customer": "Jane Smith"
+}
+```
+
+This will fail, log an error, send a Slack notification, and raise a ValueError.
+
+3️⃣ Missing Status (invalid event)
+```bash{
+  "order_id": "12347",
+  "customer": "Alice"
+}
+```
+
+This will raise:
+
+ValueError: Missing 'status' field in event
+
+
+
 * code pipeline
 Source Stage → pulls your repo from GitHub using a token stored in Secrets Manager.
 
