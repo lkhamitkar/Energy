@@ -11,6 +11,30 @@ const table = new dynamodb.Table(this, "OrdersTable", {
 });
 ```
 
+* lambda a
+When random.choice([True, False]) returns False:
+```bash
+{
+  "results": false
+}
+```
+
+When random.choice([True, False]) returns True:
+```bash
+{
+  "results": true,
+  "orders": [
+    {
+      "status": "accepted",
+      "power": 1
+    },
+    {
+      "status": "rejected",
+      "power": 2
+    }
+  ]
+}
+```
 * code pipeline
 Source Stage → pulls your repo from GitHub using a token stored in Secrets Manager.
 
