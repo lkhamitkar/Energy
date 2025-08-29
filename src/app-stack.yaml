@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Energy Auction App Stack - Serverless Infra
+
+Resources:
+  ###################################################
+  # DynamoDB Table (with TTL)
+  ###################################################
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: Orders
+      AttributeDefinitions:
+        - AttributeName: record_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: record_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  ###################################################
+  # S3 Bucket (for accepted orders)
+  ###################################################
+  OrderResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: order-results
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Status: Enabled
+            ExpirationInDays: 7
+
+  ###################################################
+  # IAM Role for Lambdas
+  ###################################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  ###################################################
+  # API Lambda (store records w/ TTL)
+  ###################################################
+  ApiLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: api-lambda
+      Handler: api_lambda.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Code:
+        S3Bucket: !Sub "${AWS::StackName}-code"
+        S3Key: api_lambda.zip
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref OrdersTable
+
+  ###################################################
+  # Lambda A (random generator)
+  ###################################################
+  LambdaA:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: lambda-a
+      Handler: lambda_a.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Code:
+        S3Bucket: !Sub "${AWS::StackName}-code"
+        S3Key: lambda_a.zip
+
+  ###################################################
+  # Lambda B (process → S3 or Slack notify)
+  ###################################################
+  LambdaB:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: lambda-b
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      Code:
+        S3Bucket: !Sub "${AWS::StackName}-code"
+        S3Key: app.zip
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref OrderResultsBucket
+          LOG_BUCKET: !Ref OrderResultsBucket
+          SLACK_WEBHOOK: "https://example.com/slack-webhook"
+
+  ###################################################
+  # Step Functions State Machine
+  ###################################################
+  StateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StepFunctionsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: "*"
+
+  OrderPipelineStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: OrderProcessingStateMachine
+      RoleArn: !GetAtt StateMachineRole.Arn
+      DefinitionString:
+        Fn::Sub: |
+          {
+            "Comment": "Order Processing Pipeline",
+            "StartAt": "LambdaA",
+            "States": {
+              "LambdaA": {
+                "Type": "Task",
+                "Resource": "${LambdaA.Arn}",
+                "ResultPath": "$.lambdaAResult",
+                "Next": "CheckResults"
+              },
+              "CheckResults": {
+                "Type": "Choice",
+                "Choices": [
+                  {
+                    "Variable": "$.lambdaAResult.results",
+                    "BooleanEquals": true,
+                    "Next": "LambdaB"
+                  }
+                ],
+                "Default": "RetryLambdaA"
+              },
+              "RetryLambdaA": {
+                "Type": "Wait",
+                "Seconds": 5,
+                "Next": "LambdaA"
+              },
+              "LambdaB": {
+                "Type": "Task",
+                "Resource": "${LambdaB.Arn}",
+                "End": true,
+                "Catch": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "ResultPath": "$.error",
+                    "Next": "NotifyFailure"
+                  }
+                ]
+              },
+              "NotifyFailure": {
+                "Type": "Task",
+                "Resource": "${LambdaB.Arn}", 
+                "End": true
+              }
+            }
+          }
+
+Outputs:
+  ApiLambdaName:
+    Value: !Ref ApiLambda
+    Description: "API Lambda function"
+  LambdaAName:
+    Value: !Ref LambdaA
+    Description: "Lambda A function"
+  LambdaBName:
+    Value: !Ref LambdaB
+    Description: "Lambda B function"
+  StateMachineName:
+    Value: !Ref OrderPipelineStateMachine
+    Description: "Order Processing State Machine"
