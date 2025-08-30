@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Simple Lambda that prints Hello World
+
+Resources:
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: hello-world-fn
+      Runtime: python3.11
+      Handler: app.handler
+      CodeUri: src/post_lambda/
+      Description: Prints Hello World
+      MemorySize: 128
+      Timeout: 5
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+Outputs:
+  HelloWorldFunctionName:
+    Value: !Ref HelloWorldFunction
+    Description: Name of the Lambda function
