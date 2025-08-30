@@ -4,7 +4,7 @@ Description: CodePipeline (GitHub master -> Dev) with CodeBuild + CloudFormation
 Parameters:
   ConnectionArn:
     Type: String
-    Default: arn:aws:codeconnections:eu-west-1:452344168826:connection/28b7040c-80b7-444a-a3d0-bf974d32abad
+    Default: arn:aws:codeconnections:eu-west-1:452344168826:connection/5e7ab4ed-14f3-4752-8091-b2850b02343c
     Description: CodeStar Connections ARN to GitHub
   FullRepositoryId:
     Type: String
