@@ -94,7 +94,7 @@ Resources:
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: "post_lambda"
+      Code: "post_lambda"
 
   LambdaAFunction:
     Type: AWS::Lambda::Function
@@ -103,7 +103,7 @@ Resources:
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: "lambda_a"
+      Code: "lambda_a"
 
   LambdaBFunction:
     Type: AWS::Lambda::Function
@@ -112,7 +112,7 @@ Resources:
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: "lambda_b"
+      Code: "lambda_b"
 
   ############################################
   # HTTP API (API Gateway v2) -> PostLambdaFunction
