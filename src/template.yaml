@@ -9,7 +9,7 @@ Resources:
       FunctionName: hello-world-fn
       Runtime: python3.11
       Handler: app.handler
-      CodeUri: src/post_lambda/
+      CodeUri: post_lambda/
       Description: Prints Hello World
       MemorySize: 128
       Timeout: 5
