@@ -1,6 +1,5 @@
 import random
 
-
 def lambda_handler(event, context):
     """Generate event for results processing."""
     response = {
