@@ -12,7 +12,7 @@ Parameters:
     Description: GitHub repo 'owner/repo' (e.g., myorg/myapp)
   BranchName:
     Type: String
-    Default: master
+    Default: main
     Description: Branch that auto-deploys to Dev
   PackagingBucketName:
     Type: String
@@ -20,11 +20,11 @@ Parameters:
     Description: S3 bucket used by 'cloudformation package' / SAM package
   DevStackName:
     Type: String
-    Default: my-app-dev
+    Default: my-app-dev-test
     Description: CloudFormation stack name for Dev
   TemplateFile:
     Type: String
-    Default: template.yaml
+    Default: src/template.yaml
     Description: Template path in repo
 
 Resources:
@@ -80,7 +80,7 @@ Resources:
         Version: '2012-10-17'
         Statement: [{ Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }]
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
       Policies:
         - PolicyName: cfn-packaging
           PolicyDocument:
@@ -94,6 +94,8 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}'
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}/*'
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
@@ -117,7 +119,7 @@ Resources:
             Value: !Ref PackagingBucketName
           - Name: TEMPLATE_FILE
             Value: !Ref TemplateFile
-      Source: { Type: CODEPIPELINE, BuildSpec: buildspec.yml }
+      Source: { Type: CODEPIPELINE, BuildSpec: buildspec.yaml }
       TimeoutInMinutes: 30
 
   CloudFormationDeployRole:
@@ -171,12 +173,15 @@ Resources:
                 RoleArn: !GetAtt CloudFormationDeployRole.Arn
                 TemplatePath: BuildOutput::packaged.yaml
                 Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+              RunOrder: 1
             - Name: ExecuteChangeSet
               ActionTypeId: { Category: Deploy, Owner: AWS, Provider: CloudFormation, Version: '1' }
               Configuration:
                 ActionMode: CHANGE_SET_EXECUTE
                 StackName: !Ref DevStackName
                 ChangeSetName: !Sub '${AWS::StackName}-dev-changeset'
+                RoleArn: !GetAtt CloudFormationDeployRole.Arn
+              RunOrder: 2
 
 Outputs:
   PipelineName: { Value: !Ref Pipeline }

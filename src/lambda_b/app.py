@@ -20,7 +20,7 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-results")
 # SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK", "https://example.com/slack-webhook")
 
 """ def notify_failure(message: str):
-    """Send a notification to Slack-like channel."""
+    Send a notification to Slack-like channel.
     payload = {"CRITICAL": f" Lambda B Failure: {message}"}
     try:
         logger.info("Sending notification: %s", payload)
@@ -30,7 +30,7 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-results")
         logger.warning("Failed to send Slack notification: %s", str(e))
 """
 
-def save_to_s3(data: dict[str, Any], filename: str, retries: int = 3, base_delay: float = 1.0):
+def save_to_s3(data: dict[str, Any], filename: str):
     """Save data to the S3 bucket with retry logic.
 
     Parameters
@@ -39,12 +39,10 @@ def save_to_s3(data: dict[str, Any], filename: str, retries: int = 3, base_delay
         The data to save to the S3 bucket.
     filename: str
         The full object name for the file.
-    retries: int
-        Number of retry attempts on failure.
-    base_delay: float
-        Base delay for exponential backoff in seconds.
     """
     attempt = 0
+    retries = 3
+    # exponential backoff base in seconds
     while attempt <= retries:
         try:
             logger.info("Attempt %s: Saving order to S3 bucket '%s' with key '%s'",
@@ -72,20 +70,26 @@ def lambda_handler(event, context):
         logger.info("Received event: %s", json.dumps(event))
 
         # Ensure event has required fields
-        if "status" not in event:
-            raise ValueError("Missing 'status' field in event")
+        if "orders" not in event:
+            logger.error("Missing 'orders' field in event")
+            raise ValueError("Missing 'orders' field in event")
 
-        if event["status"] == "rejected":
-            logger.error("Order rejected: %s", json.dumps(event))
-            raise ValueError("Order status is rejected!")
+        if len(event["orders"]) == 0:
+            logger.error("Orders list is empty")
+            raise ValueError("Orders list is empty")
 
         # Save accepted order
-        timestamp = dt.datetime.now(dt.timezone.utc).isoformat()
-        filename = f"orders/order_{timestamp}.json"
-        save_to_s3(data=event, filename=filename)
+        for order in event["orders"]:
+            if order.get("status") == "accepted":
+                logger.info("Processing accepted order: %s", order)
+                save_to_s3(data=event, filename=f"orders/order_{dt.datetime.now(dt.timezone.utc).isoformat()}")
+            elif order.get("status") == "rejected":
+                # slack notification for rejected orders
+                logger.info("Order rejected: %s", order)
+            else:
+                logger.warning("Unknown order status: %s", order)
 
-        return {"status": "success", "file": filename}
     except Exception as e:
         logger.exception("Lambda B failed: %s", str(e))
         # notify_failure(str(e))
-        raise
+        raise e
