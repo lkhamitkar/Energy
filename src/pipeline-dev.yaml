@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline (GitHub master -> Dev) with CodeBuild + CloudFormation
+
+Parameters:
+  ConnectionArn:
+    Type: String
+    Default: arn:aws:codeconnections:eu-west-1:452344168826:connection/28b7040c-80b7-444a-a3d0-bf974d32abad
+    Description: CodeStar Connections ARN to GitHub
+  FullRepositoryId:
+    Type: String
+    Default: lkhamitkar/Energy
+    Description: GitHub repo 'owner/repo' (e.g., myorg/myapp)
+  BranchName:
+    Type: String
+    Default: master
+    Description: Branch that auto-deploys to Dev
+  PackagingBucketName:
+    Type: String
+    Default: build-packaging-eu-west-1 
+    Description: S3 bucket used by 'cloudformation package' / SAM package
+  DevStackName:
+    Type: String
+    Default: my-app-dev
+    Description: CloudFormation stack name for Dev
+  TemplateFile:
+    Type: String
+    Default: template.yaml
+    Description: Template path in repo
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: codepipeline.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: pipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ s3:GetObject, s3:PutObject, s3:ListBucket ]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action: [ codebuild:StartBuild, codebuild:BatchGetBuilds ]
+                Resource: '*'
+              - Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: !Ref ConnectionArn
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:DeleteChangeSet
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: '*'
+                Condition:
+                  StringEqualsIfExists: { iam:PassedToService: cloudformation.amazonaws.com }
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeBuildDeveloperAccess
+      Policies:
+        - PolicyName: cfn-packaging
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PackagingBucketName}'
+                  - !Sub 'arn:aws:s3:::${PackagingBucketName}/*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - sts:GetCallerIdentity
+                Resource: "*"
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-build'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: PACKAGING_BUCKET
+            Value: !Ref PackagingBucketName
+          - Name: TEMPLATE_FILE
+            Value: !Ref TemplateFile
+      Source: { Type: CODEPIPELINE, BuildSpec: buildspec.yml }
+      TimeoutInMinutes: 30
+
+  CloudFormationDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: cloudformation.amazonaws.com }, Action: sts:AssumeRole }]
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Start broad for Dev; tighten later to least-privilege
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore: { Type: S3, Location: !Ref ArtifactBucket }
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHub_Source
+              ActionTypeId: { Category: Source, Owner: AWS, Provider: CodeStarSourceConnection, Version: '1' }
+              Configuration:
+                ConnectionArn: !Ref ConnectionArn
+                FullRepositoryId: !Ref FullRepositoryId
+                BranchName: !Ref BranchName
+                OutputArtifactFormat: CODE_ZIP
+              OutputArtifacts: [{ Name: SourceOutput }]
+        - Name: Build
+          Actions:
+            - Name: BuildAndPackage
+              ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: '1' }
+              InputArtifacts: [{ Name: SourceOutput }]
+              OutputArtifacts: [{ Name: BuildOutput }]
+              Configuration: { ProjectName: !Ref CodeBuildProject }
+        - Name: DeployDev
+          Actions:
+            - Name: CreateChangeSet
+              ActionTypeId: { Category: Deploy, Owner: AWS, Provider: CloudFormation, Version: '1' }
+              InputArtifacts: [{ Name: BuildOutput }]
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: !Ref DevStackName
+                ChangeSetName: !Sub '${AWS::StackName}-dev-changeset'
+                RoleArn: !GetAtt CloudFormationDeployRole.Arn
+                TemplatePath: BuildOutput::packaged.yaml
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+            - Name: ExecuteChangeSet
+              ActionTypeId: { Category: Deploy, Owner: AWS, Provider: CloudFormation, Version: '1' }
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: !Ref DevStackName
+                ChangeSetName: !Sub '${AWS::StackName}-dev-changeset'
+
+Outputs:
+  PipelineName: { Value: !Ref Pipeline }
+  ArtifactBucketName: { Value: !Ref ArtifactBucket }
