@@ -7,9 +7,10 @@ phases:
   build:
     commands:
       - echo "== Building / Packaging to packaged.yaml =="
-      - TEMPLATE="${TEMPLATE_FILE:-template.yaml}"
+      - TEMPLATE="${TEMPLATE_FILE:-src/template.yaml}"
       - sam build --use-container || true
       - if [ -f .aws-sam/build/template.yaml ]; then TEMPLATE=".aws-sam/build/template.yaml"; fi
+      - echo "$TEMPLATE"
       - aws cloudformation package \
           --template-file "$TEMPLATE" \
           --s3-bucket build-packaging-eu-west-1 \
