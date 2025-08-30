@@ -8,7 +8,7 @@ Parameters:
     Description: CodeStar Connections ARN to GitHub
   FullRepositoryId:
     Type: String
-    Default: lkhamitkar/Energy
+    Default: lkhamitkar/energy
     Description: GitHub repo 'owner/repo' (e.g., myorg/myapp)
   BranchName:
     Type: String
