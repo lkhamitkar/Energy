@@ -32,7 +32,6 @@ The Data Pipeline should be triggered by schedule(scheduler) and execute several
   "results": false 
 }
 ```
- 
 
 Lambda B that gets order from the event and raised an error, if the order status is rejected. Otherwise, it should be able to store results in S3 Bucket called “order-results” .
 
