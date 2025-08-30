@@ -12,7 +12,7 @@ phases:
       - if [ -f .aws-sam/build/template.yaml ]; then TEMPLATE=".aws-sam/build/template.yaml"; fi
       - aws cloudformation package \
           --template-file "$TEMPLATE" \
-          --s3-bucket "$PACKAGING_BUCKET" \
+          --s3-bucket build-packaging-eu-west-1 \
           --output-template-file packaged.yaml
 artifacts:
   files:
