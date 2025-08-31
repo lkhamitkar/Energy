@@ -1,23 +1,17 @@
 version: 0.2
-
 phases:
   install:
+    runtime-versions:
+      python: 3.11
     commands:
-      - pip install --upgrade awscli aws-sam-cli
+      - pip install --upgrade pip
+      - pip install aws-sam-cli
   build:
     commands:
-      - echo "== Building / Packaging to packaged.yaml =="
-      - TEMPLATE="${TEMPLATE_FILE:-src/template.yaml}"
-      - sam build --use-container || true
-      - if [ -f .aws-sam/build/template.yaml ]; then TEMPLATE=".aws-sam/build/template.yaml"; fi
-      - echo "$TEMPLATE"
-      - pip install -r src/post_lambda/requirements.txt -t post_lambda/
-      - pip install -r src/lambda_a/requirements.txt -t lambda_a/ || true
-      - pip install -r src/lambda_b/requirements.txt -t lambda_b/ || true
-      - aws cloudformation package 
-          --template-file "$TEMPLATE" 
-          --s3-bucket build-packaging-eu-west-1 
-          --output-template-file packaged.yaml
+      - echo "== SAM build =="
+      - sam build                      # add --use-container only if PrivilegedMode is ON
+      - echo "== Package to packaged.yaml =="
+      - sam package --s3-bucket "$PACKAGING_BUCKET" --output-template-file packaged.yaml
 artifacts:
   files:
     - packaged.yaml
