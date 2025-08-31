@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CodePipeline (GitHub main -> Dev) with CodeBuild + CloudFormation
+Description: CodePipeline (GitHub master -> Dev) with CodeBuild + CloudFormation
 
 Parameters:
-  # (existing)
   ConnectionArn:
     Type: String
     Default: arn:aws:codeconnections:eu-west-1:452344168826:connection/5e7ab4ed-14f3-4752-8091-b2850b02343c
@@ -10,29 +9,23 @@ Parameters:
   FullRepositoryId:
     Type: String
     Default: lkhamitkar/energy
+    Description: GitHub repo 'owner/repo' (e.g., myorg/myapp)
   BranchName:
     Type: String
     Default: main
+    Description: Branch that auto-deploys to Dev
   PackagingBucketName:
     Type: String
     Default: build-packaging-eu-west-1
+    Description: S3 bucket used by 'cloudformation package' / SAM package
   DevStackName:
     Type: String
     Default: my-app-dev-test
+    Description: CloudFormation stack name for Dev
   TemplateFile:
     Type: String
     Default: src/template.yaml
-
-  # NEW: allow using an existing, SCP-approved pipeline role
-  PipelineRoleArn:
-    Type: String
-    Default: arn:aws:iam::452344168826:role/service-role/AWSCodePipelineServiceRole-eu-west-1-my-app-dev-pipeline
-    Description: '(Optional) Existing IAM role ARN (whitelisted by SCP) for CodePipeline. If empty, this stack will create one.'
-
-
-Conditions:
-  CreatePipelineRole: !Equals [ !Ref PipelineRoleArn, '' ]
-
+    Description: Template path in repo
 
 Resources:
   ArtifactBucket:
@@ -40,19 +33,15 @@ Resources:
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
   PipelineRole:
-    Condition: CreatePipelineRole
     Type: AWS::IAM::Role
     Properties:
-      Path: /service-role/              # helps in orgs that allow only service-role path
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: { Service: codepipeline.amazonaws.com }
-            Action: sts:AssumeRole
+        Statement: [{ Effect: Allow, Principal: { Service: codepipeline.amazonaws.com }, Action: sts:AssumeRole }]
       Policies:
         - PolicyName: pipeline
           PolicyDocument:
@@ -67,7 +56,8 @@ Resources:
                 Action: [ codebuild:StartBuild, codebuild:BatchGetBuilds ]
                 Resource: '*'
               - Effect: Allow
-                Action: codeconnections:UseConnection
+              # Action: codeconnections:UseConnection
+                Action: codestar-connections:UseConnection
                 Resource: !Ref ConnectionArn
               - Effect: Allow
                 Action:
@@ -89,10 +79,7 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: { Service: codebuild.amazonaws.com }
-            Action: sts:AssumeRole
+        Statement: [{ Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }]
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
       Policies:
@@ -101,14 +88,21 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: [ s3:PutObject, s3:GetObject, s3:ListBucket ]
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
                 Resource:
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}'
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}/*'
                   - !GetAtt ArtifactBucket.Arn
                   - !Sub '${ArtifactBucket.Arn}/*'
               - Effect: Allow
-                Action: [ logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents, sts:GetCallerIdentity ]
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - sts:GetCallerIdentity
                 Resource: "*"
 
   CodeBuildProject:
@@ -122,8 +116,10 @@ Resources:
         Image: aws/codebuild/standard:7.0
         Type: LINUX_CONTAINER
         EnvironmentVariables:
-          - { Name: PACKAGING_BUCKET, Value: !Ref PackagingBucketName }
-          - { Name: TEMPLATE_FILE,   Value: !Ref TemplateFile }
+          - Name: PACKAGING_BUCKET
+            Value: !Ref PackagingBucketName
+          - Name: TEMPLATE_FILE
+            Value: !Ref TemplateFile
       Source: { Type: CODEPIPELINE, BuildSpec: buildspec.yaml }
       TimeoutInMinutes: 30
 
@@ -132,21 +128,21 @@ Resources:
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: { Service: cloudformation.amazonaws.com }
-            Action: sts:AssumeRole
+        Statement: [{ Effect: Allow, Principal: { Service: cloudformation.amazonaws.com }, Action: sts:AssumeRole }]
       Policies:
         - PolicyName: deploy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - { Effect: Allow, Action: "*", Resource: "*" }
+              # Start broad for Dev; tighten later to least-privilege
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
 
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      RoleArn: !If [ CreatePipelineRole, !GetAtt PipelineRole.Arn, !Ref PipelineRoleArn ]
+      RoleArn: !GetAtt PipelineRole.Arn
       ArtifactStore: { Type: S3, Location: !Ref ArtifactBucket }
       Stages:
         - Name: Source
@@ -154,24 +150,24 @@ Resources:
             - Name: GitHub_Source
               ActionTypeId: { Category: Source, Owner: AWS, Provider: CodeStarSourceConnection, Version: '1' }
               Configuration:
-                ConnectionArn: !Ref ConnectionArn   # supply the whitelisted connection if needed
+                ConnectionArn: !Ref ConnectionArn
                 FullRepositoryId: !Ref FullRepositoryId
                 BranchName: !Ref BranchName
                 OutputArtifactFormat: CODE_ZIP
                 DetectChanges: "true"
-              OutputArtifacts: [ { Name: SourceOutput } ]
+              OutputArtifacts: [{ Name: SourceOutput }]
         - Name: Build
           Actions:
             - Name: BuildAndPackage
               ActionTypeId: { Category: Build, Owner: AWS, Provider: CodeBuild, Version: '1' }
-              InputArtifacts:  [ { Name: SourceOutput } ]
-              OutputArtifacts: [ { Name: BuildOutput } ]
+              InputArtifacts: [{ Name: SourceOutput }]
+              OutputArtifacts: [{ Name: BuildOutput }]
               Configuration: { ProjectName: !Ref CodeBuildProject }
         - Name: DeployDev
           Actions:
             - Name: CreateChangeSet
               ActionTypeId: { Category: Deploy, Owner: AWS, Provider: CloudFormation, Version: '1' }
-              InputArtifacts: [ { Name: BuildOutput } ]
+              InputArtifacts: [{ Name: BuildOutput }]
               Configuration:
                 ActionMode: CHANGE_SET_REPLACE
                 StackName: !Ref DevStackName
@@ -192,5 +188,3 @@ Resources:
 Outputs:
   PipelineName: { Value: !Ref Pipeline }
   ArtifactBucketName: { Value: !Ref ArtifactBucket }
-  EffectivePipelineRoleArn:
-    Value: !If [ CreatePipelineRole, !GetAtt PipelineRole.Arn, !Ref PipelineRoleArn ]
