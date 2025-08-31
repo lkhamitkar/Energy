@@ -19,6 +19,15 @@ Parameters:
     Type: Number
     Default: 5
     Description: Seconds to wait before retrying LambdaA when ok=false
+  orderResultBucketName:
+    Type: String
+    Default: order-details-energy
+    Description: S3 bucket used by 'cloudformation package' / SAM package
+  RecordDynamoTableNameArn:
+    Type: String
+    Default: arn:aws:dynamodb:eu-west-1:452344168826:table/records_table
+    Description: Dynamo Db table name to store order records
+
 
 Conditions:
   UseDefaultBus: !Equals [ !Ref EventBusName, 'default' ]
@@ -63,6 +72,37 @@ Resources:
                   - UseDefaultBus
                   - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
                   - !GetAtt TriggerBus.Arn
+
+        - PolicyName: LambdaS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:AbortMultipartUpload
+                  - s3:PutObjectAcl
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${orderResultBucketName}'
+                  - !Sub 'arn:aws:s3:::${orderResultBucketName}/*'
+        - PolicyName: LambdaDynamoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !Sub '${RecordDynamoTableNameArn}'
+                  - !Sub '${RecordDynamoTableNameArn}/index/*'
 
   StepFunctionsExecutionRole:
     Type: AWS::IAM::Role
