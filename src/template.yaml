@@ -254,16 +254,13 @@ Resources:
       Name: start-loop-rule
       Description: Start the Step Functions looping state machine
       State: ENABLED
-      EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
-      EventPattern:
-        source: [ !Ref EventSource ]
-        detail-type: [ !Ref EventDetailType ]
+      # EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
+      ScheduleExpression: rate(5 minutes)
       Targets:
         - Id: StepFunctionsTarget
           Arn: !Ref LoopingStateMachine
           RoleArn: !GetAtt EventBridgeToSFNRole.Arn
-          InputPath: '$'
-
+          Input: '{"trigger":"schedule"}'
 Outputs:
   ApiBaseUrl:
     Description: HTTP API base URL
