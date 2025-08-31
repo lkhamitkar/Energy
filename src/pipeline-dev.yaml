@@ -24,7 +24,7 @@ Parameters:
     Description: CloudFormation stack name for Dev
   TemplateFile:
     Type: String
-    Default: src/template.yaml
+    Default: template.yaml
     Description: Template path in repo
 
 Resources:

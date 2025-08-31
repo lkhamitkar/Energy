@@ -4,12 +4,10 @@ phases:
     runtime-versions:
       python: 3.11
     commands:
-      - set -euo pipefail
       - pip install --upgrade pip
       - pip install aws-sam-cli
   build:
     commands:
-      - set -euo pipefail
       - echo "== SAM build from ./src =="
       - pwd && ls -la && ls -la src
       - cd src
