@@ -11,7 +11,6 @@ Request body example:
 
 The Data Pipeline should be triggered by schedule(scheduler) and execute several lambdas in a row (step function). Lambda A that randomly generates True/False value and returns:
 
-
 ```
 // Lambda with ready results 
 { 
