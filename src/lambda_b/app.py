@@ -68,17 +68,14 @@ def lambda_handler(event, context):
     try:
         logger.info("Received event: %s", json.dumps(event))
 
-        # Ensure event has required fields
-        if "orders" not in event:
-            logger.error("Missing 'orders' field in event")
-            raise ValueError("Missing 'orders' field in event")
+        orders_list = event["Payload"].get("orders", [])
 
-        if len(event["orders"]) == 0:
+        if len(orders_list) == 0:
             logger.error("Orders list is empty")
             raise ValueError("Orders list is empty")
 
         # Save accepted order
-        for order in event["orders"]:
+        for order in orders_list:
             if order.get("status") == "accepted":
                 logger.info("Processing accepted order: %s", order)
                 save_to_s3(data=event, filename=f"orders/order_{dt.datetime.now(dt.timezone.utc).isoformat()}")

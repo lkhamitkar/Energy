@@ -85,6 +85,21 @@ Resources:
                   - !Sub '${LambdaAFunction.Arn}:*'
                   - !GetAtt LambdaBFunction.Arn
                   - !Sub '${LambdaBFunction.Arn}:*'
+        - PolicyName: SfnLoggingPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
 
   EventBridgeToSFNRole:
     Type: AWS::IAM::Role
@@ -180,11 +195,24 @@ Resources:
   ############################################
   # STEP FUNCTIONS STATE MACHINE
   ############################################
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/states/${AWS::StackName}-sfn"
+      RetentionInDays: 14
+
+
   LoopingStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: OrderProcessingStateMachine
       RoleArn: !GetAtt StepFunctionsExecutionRole.Arn
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+        IncludeExecutionData: true         # include input/output
+        Level: ALL
       DefinitionString:
         Fn::Sub: |
           {
