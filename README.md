@@ -45,6 +45,22 @@ The data pipeline should fulfill the following requirements:
 deployment(- Create AWS deployment Pipeline that deploys the app from a GitHub repo to our AWS account using CodePipeline (we provide the base code).
 
 - All merges to master should automatically deploy the code to Dev environment.
+
+{
+    "EvaluationResults": [
+        {
+            "EvalActionName": "codeconnections:UseConnection",
+            "EvalResourceName": "arn:aws:codeconnections:eu-west-1:452344168826:connection/5e7ab4ed-14f3-4752-8091-b2850b02343c",
+            "EvalDecision": "implicitDeny",
+            "MatchedStatements": [],
+            "MissingContextValues": [],
+            "OrganizationsDecisionDetail": {
+                "AllowedByOrganizations": false
+            }
+        }
+    ]
+}
+
 - Create a simple GitHub Actions workflow to run on merge to master.)
 
 - (Optional) Write tests for aws cdk constructs and ensure that the tests are executed in GitHub Actions stage.
