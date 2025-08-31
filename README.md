@@ -4,7 +4,6 @@ Our organization is participating in an energy market auction and has a service 
 ## The task
 
 1. There is an API lambda that processes POST requests and stores data in a Database.
-
 Request body example:
 ` 
 [ { "record_id": "unique_id_1", "parameter_1": "abc", "parameter_2": 4 },{ "record_id": "unique_id_2", "parameter_1": "def", "parameter_2": 2.1 } ]
