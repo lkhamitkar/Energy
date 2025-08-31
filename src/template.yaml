@@ -94,7 +94,7 @@ Resources:
             Default: WaitThenRetry
           WaitThenRetry:
             Type: Wait
-            Seconds: ${RetrySeconds}
+            Seconds: 5
             Next: InvokeA
           InvokeB:
             Type: Task
