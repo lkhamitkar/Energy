@@ -9,6 +9,7 @@ phases:
   build:
     commands:
       - echo "== SAM build =="
+      - cd src
       - sam build                      # add --use-container only if PrivilegedMode is ON
       - echo "== Package to packaged.yaml =="
       - sam package --s3-bucket "$PACKAGING_BUCKET" --output-template-file packaged.yaml
