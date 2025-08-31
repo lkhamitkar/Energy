@@ -16,7 +16,7 @@ Parameters:
     Description: Branch that auto-deploys to Dev
   PackagingBucketName:
     Type: String
-    Default: build-packaging-eu-west-1 
+    Default: build-packaging-eu-west-1
     Description: S3 bucket used by 'cloudformation package' / SAM package
   DevStackName:
     Type: String
@@ -56,7 +56,7 @@ Resources:
                 Action: [ codebuild:StartBuild, codebuild:BatchGetBuilds ]
                 Resource: '*'
               - Effect: Allow
-                Action: codestar-connections:UseConnection
+                Action: codeconnections:UseConnection
                 Resource: !Ref ConnectionArn
               - Effect: Allow
                 Action:
