@@ -19,6 +19,11 @@ Parameters:
     Default: 5
     Description: Seconds to wait before retrying LambdaA when ok=false
 
+Conditions:
+  UseDefaultBus: !Equals [ !Ref EventBusName, 'default' ]
+  CreateCustomBus: !Not [ !Condition UseDefaultBus ]
+  
+
 Resources:
   TriggerBus:
     Condition: CreateCustomBus
