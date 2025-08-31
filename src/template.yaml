@@ -208,7 +208,7 @@ Resources:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !GetAtt PostLambdaFunction.Arn
-      PayloadFormatVersion: '2.0'
+      PayloadFormatVersion: '1.0'
 
   PostLambdaRoute:
     Type: AWS::ApiGatewayV2::Route
