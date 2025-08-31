@@ -11,6 +11,9 @@ phases:
       - sam build --use-container || true
       - if [ -f .aws-sam/build/template.yaml ]; then TEMPLATE=".aws-sam/build/template.yaml"; fi
       - echo "$TEMPLATE"
+      - pip install -r post_lambda/requirements.txt -t post_lambda/
+      - pip install -r lambda_a/requirements.txt -t lambda_a/ || true
+      - pip install -r lambda_b/requirements.txt -t lambda_b/ || true
       - aws cloudformation package 
           --template-file "$TEMPLATE" 
           --s3-bucket build-packaging-eu-west-1 
