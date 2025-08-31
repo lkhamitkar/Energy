@@ -253,6 +253,7 @@ Resources:
     Properties:
       Name: start-loop-rule
       Description: Start the Step Functions looping state machine
+      State: ENABLED
       EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
       EventPattern:
         source: [ !Ref EventSource ]
