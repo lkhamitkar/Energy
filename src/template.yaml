@@ -112,7 +112,7 @@ Resources:
     Properties:
       FunctionName: post-lambda
       Runtime: python3.11
-      Handler: index.handler
+      Handler: app.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: post_lambda/
 
@@ -121,7 +121,7 @@ Resources:
     Properties:
       FunctionName: lambda-a
       Runtime: python3.11
-      Handler: index.handler
+      Handler: app.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: lambda_a/
 
@@ -130,7 +130,7 @@ Resources:
     Properties:
       FunctionName: lambda-b
       Runtime: python3.11
-      Handler: index.handler
+      Handler: app.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: lambda_b/
 
