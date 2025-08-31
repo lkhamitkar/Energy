@@ -153,7 +153,7 @@ Resources:
                 FullRepositoryId: !Ref FullRepositoryId
                 BranchName: !Ref BranchName
                 OutputArtifactFormat: CODE_ZIP
-                DetectChanges: true
+                DetectChanges: "true"
               OutputArtifacts: [{ Name: SourceOutput }]
         - Name: Build
           Actions:
