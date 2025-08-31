@@ -255,7 +255,7 @@ Resources:
       Description: Start the Step Functions looping state machine
       State: ENABLED
       # EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
-      ScheduleExpression: rate(1 minutes)
+      ScheduleExpression: rate(2 minutes)
       Targets:
         - Id: StepFunctionsTarget
           Arn: !Ref LoopingStateMachine
