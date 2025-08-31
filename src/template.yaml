@@ -112,7 +112,7 @@ Resources:
     Properties:
       FunctionName: post-lambda
       Runtime: python3.11
-      Handler: app.handler
+      Handler: app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: post_lambda/
 
@@ -121,7 +121,7 @@ Resources:
     Properties:
       FunctionName: lambda-a
       Runtime: python3.11
-      Handler: app.handler
+      Handler: app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: lambda_a/
 
@@ -130,7 +130,7 @@ Resources:
     Properties:
       FunctionName: lambda-b
       Runtime: python3.11
-      Handler: app.handler
+      Handler: app.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       CodeUri: lambda_b/
 
@@ -255,7 +255,7 @@ Resources:
       Description: Start the Step Functions looping state machine
       State: ENABLED
       # EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
-      ScheduleExpression: rate(5 minutes)
+      ScheduleExpression: rate(1 minutes)
       Targets:
         - Id: StepFunctionsTarget
           Arn: !Ref LoopingStateMachine
