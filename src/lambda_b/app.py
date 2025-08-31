@@ -44,8 +44,7 @@ def save_to_s3(data: dict[str, Any], filename: str):
     # exponential backoff base in seconds
     while attempt <= retries:
         try:
-            logger.info("Attempt %s: Saving order to S3 bucket '%s' with key '%s'",
-                        attempt + 1, BUCKET_NAME, filename)
+            logger.info(f"Attempt {attempt + 1}: Saving order to S3 bucket {BUCKET_NAME} with key {filename}")
             s3.put_object(
                 Bucket=BUCKET_NAME,
                 Key=filename,
@@ -57,16 +56,15 @@ def save_to_s3(data: dict[str, Any], filename: str):
         except Exception as e:
             attempt += 1
             if attempt > retries:
-                logger.exception("All retries failed. Could not save to S3: %s", str(e))
+                logger.exception(f"All retries failed. Could not save to S3: {str(e)}")
                 raise
-            logger.warning("Failed to save order (attempt %s/%s). Retrying in %.2f seconds...",
-                           attempt, retries)
+            logger.warning(f"Failed to save order (attempt {attempt}/{retries} with exception: {str(e)}). Retrying...")
 
 
 def lambda_handler(event, context):
     """Process order result."""
     try:
-        logger.info("Received event: %s", json.dumps(event))
+        logger.info(f"Received event: {json.dumps(event)}")
 
         orders_list = event["Payload"].get("orders", [])
 
@@ -77,15 +75,15 @@ def lambda_handler(event, context):
         # Save accepted order
         for order in orders_list:
             if order.get("status") == "accepted":
-                logger.info("Processing accepted order: %s", order)
+                logger.info(f"Processing accepted order: {order}")
                 save_to_s3(data=event, filename=f"orders/order_{dt.datetime.now(dt.timezone.utc).isoformat()}")
             elif order.get("status") == "rejected":
                 # slack notification for rejected orders
-                logger.info("Order rejected: %s", order)
+                logger.info(f"Order rejected: {order}" )
             else:
-                logger.warning("Unknown order status: %s", order)
+                logger.warning(f"Unknown order status: {order}")
 
     except Exception as e:
-        logger.exception("Lambda B failed: %s", str(e))
+        logger.exception(f"Lambda B failed: {str(e)}")
         # notify_failure(str(e))
         raise e
