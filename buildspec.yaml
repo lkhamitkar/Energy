@@ -4,15 +4,21 @@ phases:
     runtime-versions:
       python: 3.11
     commands:
+      - set -euo pipefail
       - pip install --upgrade pip
       - pip install aws-sam-cli
   build:
     commands:
-      - echo "== SAM build =="
+      - set -euo pipefail
+      - echo "== SAM build from ./src =="
+      - pwd && ls -la && ls -la src
       - cd src
-      - sam build                      # add --use-container only if PrivilegedMode is ON
-      - echo "== Package to packaged.yaml =="
-      - sam package --s3-bucket "$PACKAGING_BUCKET" --output-template-file packaged.yaml
+      # remove --use-container unless CodeBuild project has PrivilegedMode=true
+      - sam build
+      - echo "== SAM package to repo root packaged.yaml =="
+      - sam package --s3-bucket build-packaging-eu-west-1 --output-template-file "$CODEBUILD_SRC_DIR/packaged.yaml"
+      - test -s "$CODEBUILD_SRC_DIR/packaged.yaml" && echo "packaged.yaml created:"
+      - ls -l "$CODEBUILD_SRC_DIR/packaged.yaml"
 artifacts:
   files:
     - packaged.yaml
