@@ -8,13 +8,12 @@ import logging
 import json
 
 
-LOG_BUCKET = os.environ['LOG_BUCKET']
 # Setup logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3 = boto3.client("s3")
-BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-results")
+BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-details-energy")
 
 # Slack webhook environment variable (replace with actual endpoint)
 # SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK", "https://example.com/slack-webhook")
