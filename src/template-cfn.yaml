@@ -1,12 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
-Description: CFN/SAM - HTTP API for Hello, EventBridge -> Step Functions (LambdaA loop -> LambdaB)
+Description: CFN - HTTP API for Hello, EventBridge -> Step Functions (LambdaA loop -> LambdaB)
 
 Parameters:
   EventBusName:
     Type: String
     Default: TriggerStepFunctionsBus
-    Description: EventBridge bus name (use 'default' to use the account's default bus)
+    Description: EventBridge bus name
   EventSource:
     Type: String
     Default: custom.loop
@@ -23,11 +22,9 @@ Parameters:
 Conditions:
   UseDefaultBus: !Equals [ !Ref EventBusName, 'default' ]
   CreateCustomBus: !Not [ !Condition UseDefaultBus ]
+  
 
 Resources:
-  ############################################
-  # EVENT BUS (created only if name != 'default')
-  ############################################
   TriggerBus:
     Condition: CreateCustomBus
     Type: AWS::Events::EventBus
@@ -47,7 +44,7 @@ Resources:
             Principal: { Service: lambda.amazonaws.com }
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: LambdaBasicLogsAndEvents
+        - PolicyName: LambdaBasicLogs
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -57,12 +54,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: '*'
-              - Effect: Allow
-                Action: events:PutEvents
-                Resource: !If
-                  - UseDefaultBus
-                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default'
-                  - !GetAtt TriggerBus.Arn
 
   StepFunctionsExecutionRole:
     Type: AWS::IAM::Role
@@ -105,34 +96,34 @@ Resources:
                 Resource: !Ref LoopingStateMachine
 
   ############################################
-  # LAMBDAS (SAM)
+  # LAMBDAS
   ############################################
   PostLambdaFunction:
-    Type: AWS::Serverless::Function
+    Type: AWS::Lambda::Function
     Properties:
       FunctionName: post-lambda
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: post_lambda/
+      CodeUri: "post_lambda"
 
   LambdaAFunction:
-    Type: AWS::Serverless::Function
+    Type: AWS::Lambda::Function
     Properties:
       FunctionName: lambda-a
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: lambda_a/
+      CodeUri: "lambda_a"
 
   LambdaBFunction:
-    Type: AWS::Serverless::Function
+    Type: AWS::Lambda::Function
     Properties:
       FunctionName: lambda-b
       Runtime: python3.11
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      CodeUri: lambda_b/
+      CodeUri: "lambda_b"
 
   ############################################
   # HTTP API (API Gateway v2) -> PostLambdaFunction
@@ -195,7 +186,7 @@ Resources:
                 "Type": "Task",
                 "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
                 "Parameters": {
-                  "FunctionName": "${LambdaAFunction.Arn}",
+                  "FunctionName": "${!GetAtt LambdaAFunction.Arn}",
                   "Payload.$": "$"
                 },
                 "ResultSelector": {
@@ -210,7 +201,7 @@ Resources:
                       "Lambda.ThrottlingException"
                     ],
                     "IntervalSeconds": 2,
-                    "MaxAttempts": 3
+                    "MaxAttempts": 3,
                   }
                 ]
               },
@@ -227,14 +218,14 @@ Resources:
               },
               "WaitThenRetry": {
                 "Type": "Wait",
-                "Seconds": ${RetrySeconds},
+                "Seconds": ${!Ref RetrySeconds},
                 "Next": "InvokeA"
               },
               "InvokeB": {
                 "Type": "Task",
                 "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
                 "Parameters": {
-                  "FunctionName": "${LambdaBFunction.Arn}",
+                  "FunctionName": "${!GetAtt LambdaBFunction.Arn}",
                   "Payload.$": "$"
                 },
                 "ResultSelector": {
@@ -253,15 +244,18 @@ Resources:
     Properties:
       Name: start-loop-rule
       Description: Start the Step Functions looping state machine
-      EventBusName: !If [ UseDefaultBus, 'default', !Ref TriggerBus ]
+      EventBusName: !Ref EventBusName
       EventPattern:
-        source: [ !Ref EventSource ]
-        detail-type: [ !Ref EventDetailType ]
+        source:
+          - !Ref EventSource
+        detail-type:
+          - !Ref EventDetailType
       Targets:
         - Id: StepFunctionsTarget
           Arn: !Ref LoopingStateMachine
           RoleArn: !GetAtt EventBridgeToSFNRole.Arn
-          InputPath: '$'
+          InputPath: '$'   # pass full event; state input will see the event, including 'detail'
+          # If you want only the 'detail' as input, use: InputPath: '$.detail'
 
 Outputs:
   ApiBaseUrl:
@@ -282,5 +276,3 @@ Outputs:
   StateMachineArn:
     Description: ARN of the Step Functions state machine
     Value: !Ref LoopingStateMachine
-  EffectiveEventBusName:
-    Value: !If [ UseDefaultBus, 'default', !Ref EventBusName ]
