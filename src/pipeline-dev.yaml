@@ -21,6 +21,10 @@ Parameters:
   TemplateFile:
     Type: String
     Default: template.yaml
+  GitHubTokenSecretName:
+    Type: String
+    Default: GithubToken
+    Description: ARN of the existing GitHub PAT secret (plain string)
 
 Resources:
   ArtifactBucket:
@@ -64,10 +68,9 @@ Resources:
                 Condition:
                   StringEqualsIfExists: { iam:PassedToService: cloudformation.amazonaws.com }
               - Effect: Allow
-                  Action: secretsmanager:GetSecretValue
-                  Resource:
-                    - !Ref Outh-token-github
-                    - !Ref WebhookSecret
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub arn:aws:secretsmanager:eu-west-1:452344168826:secret:GithubToken-69sJGf
 
   CodeBuildRole:
     Type: AWS::IAM::Role
@@ -126,17 +129,6 @@ Resources:
             Statement:
               - { Effect: Allow, Action: "*", Resource: "*" }
 
-  # ---- Auto-generate a random webhook HMAC secret in the stack ----
-  WebhookSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Description: Auto-generated HMAC secret for GitHub -> CodePipeline webhook
-      GenerateSecretString:
-        SecretStringTemplate: "{}"
-        GenerateStringKey: token
-        PasswordLength: 40
-        ExcludePunctuation: true
-
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -151,7 +143,7 @@ Resources:
                 Owner: !Ref GitHubOwner
                 Repo: !Ref GitHubRepo
                 Branch: !Ref BranchName
-                OAuthToken: !Sub "{{resolve:secretsmanager:Outh-token-github::SecretString}}"
+                OAuthToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString:oauthtoken}}"
                 PollForSourceChanges: "false"
               OutputArtifacts: [{ Name: SourceOutput }]
         - Name: Build
@@ -194,7 +186,7 @@ Resources:
       Authentication: GITHUB_HMAC
       AuthenticationConfiguration:
         # Dynamic reference pulls the generated value at deploy time
-        SecretToken: !Sub "{{resolve:secretsmanager:${WebhookSecret}::SecretString:token}}"
+        SecretToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString:webhooktoken}}"
       Filters:
         - JsonPath: $.ref
           MatchEquals: !Sub "refs/heads/${BranchName}"
@@ -202,4 +194,3 @@ Resources:
 Outputs:
   PipelineName: { Value: !Ref Pipeline }
   ArtifactBucketName: { Value: !Ref ArtifactBucket }
-  WebhookSecretArn: { Value: !Ref WebhookSecret }
