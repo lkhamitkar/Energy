@@ -16,10 +16,10 @@ s3 = boto3.client("s3")
 BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-details-energy")
 
 # Slack webhook environment variable (replace with actual endpoint)
-# SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK", "https://example.com/slack-webhook")
+SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK", "https://hooks.slack.com/services/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")
 
-""" def notify_failure(message: str):
-    Send a notification to Slack-like channel.
+def notify_failure(message: str):
+    #Send a notification to Slack-like channel.
     payload = {"CRITICAL": f" Lambda B Failure: {message}"}
     try:
         logger.info("Sending notification: %s", payload)
@@ -27,7 +27,7 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME", "order-details-energy")
         requests.post(SLACK_WEBHOOK, json=payload, timeout=3)
     except Exception as e:
         logger.warning("Failed to send Slack notification: %s", str(e))
-"""
+
 
 def save_to_s3(data: dict[str, Any], filename: str):
     """Save data to the S3 bucket with retry logic.
@@ -85,5 +85,5 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.exception(f"Lambda B failed: {str(e)}")
-        # notify_failure(str(e))
+        notify_failure(str(e))
         raise e

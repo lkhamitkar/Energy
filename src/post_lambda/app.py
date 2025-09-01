@@ -63,7 +63,7 @@ def lambda_handler(event, context):
             "headers": {
                 "Content-Type": "application/json"
             },
-            "body": ""
+            "body": json.dumps({"Message": "Successfully saved to DB"})
         }
 
     return {

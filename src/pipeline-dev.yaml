@@ -1,15 +1,13 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CodePipeline (GitHub master -> Dev) with CodeBuild + CloudFormation
+Description: CodePipeline (GitHub main -> Dev) with CodeBuild + CloudFormation via GitHub OAuth (HMAC auto-generated)
 
 Parameters:
-  ConnectionArn:
+  GitHubOwner:
     Type: String
-    Default: arn:aws:codeconnections:eu-west-1:452344168826:connection/5e7ab4ed-14f3-4752-8091-b2850b02343c
-    Description: CodeStar Connections ARN to GitHub
-  FullRepositoryId:
+    Default: lkhamitkar
+  GitHubRepo:
     Type: String
-    Default: lkhamitkar/energy
-    Description: GitHub repo 'owner/repo' (e.g., myorg/myapp)
+    Default: energy
   BranchName:
     Type: String
     Default: main
@@ -17,15 +15,12 @@ Parameters:
   PackagingBucketName:
     Type: String
     Default: build-packaging-eu-west-1
-    Description: S3 bucket used by 'cloudformation package' / SAM package
   DevStackName:
     Type: String
     Default: my-app-dev-test
-    Description: CloudFormation stack name for Dev
   TemplateFile:
     Type: String
     Default: template.yaml
-    Description: Template path in repo
 
 Resources:
   ArtifactBucket:
@@ -33,8 +28,7 @@ Resources:
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
 
   PipelineRole:
     Type: AWS::IAM::Role
@@ -56,10 +50,6 @@ Resources:
                 Action: [ codebuild:StartBuild, codebuild:BatchGetBuilds ]
                 Resource: '*'
               - Effect: Allow
-              # Action: codeconnections:UseConnection
-                Action: codestar-connections:UseConnection
-                Resource: !Ref ConnectionArn
-              - Effect: Allow
                 Action:
                   - cloudformation:CreateChangeSet
                   - cloudformation:ExecuteChangeSet
@@ -73,6 +63,11 @@ Resources:
                 Resource: '*'
                 Condition:
                   StringEqualsIfExists: { iam:PassedToService: cloudformation.amazonaws.com }
+              - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource:
+                    - !Ref Outh-token-github
+                    - !Ref WebhookSecret
 
   CodeBuildRole:
     Type: AWS::IAM::Role
@@ -88,10 +83,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:ListBucket
+                Action: [ s3:PutObject, s3:GetObject, s3:ListBucket ]
                 Resource:
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}'
                   - !Sub 'arn:aws:s3:::${PackagingBucketName}/*'
@@ -116,10 +108,8 @@ Resources:
         Image: aws/codebuild/standard:7.0
         Type: LINUX_CONTAINER
         EnvironmentVariables:
-          - Name: PACKAGING_BUCKET
-            Value: !Ref PackagingBucketName
-          - Name: TEMPLATE_FILE
-            Value: !Ref TemplateFile
+          - { Name: PACKAGING_BUCKET, Value: !Ref PackagingBucketName }
+          - { Name: TEMPLATE_FILE,  Value: !Ref TemplateFile }
       Source: { Type: CODEPIPELINE, BuildSpec: buildspec.yaml }
       TimeoutInMinutes: 30
 
@@ -134,10 +124,18 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Start broad for Dev; tighten later to least-privilege
-              - Effect: Allow
-                Action: "*"
-                Resource: "*"
+              - { Effect: Allow, Action: "*", Resource: "*" }
+
+  # ---- Auto-generate a random webhook HMAC secret in the stack ----
+  WebhookSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Auto-generated HMAC secret for GitHub -> CodePipeline webhook
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: token
+        PasswordLength: 40
+        ExcludePunctuation: true
 
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -148,13 +146,13 @@ Resources:
         - Name: Source
           Actions:
             - Name: GitHub_Source
-              ActionTypeId: { Category: Source, Owner: AWS, Provider: CodeStarSourceConnection, Version: '1' }
+              ActionTypeId: { Category: Source, Owner: ThirdParty, Provider: GitHub, Version: '1' }
               Configuration:
-                ConnectionArn: !Ref ConnectionArn
-                FullRepositoryId: !Ref FullRepositoryId
-                BranchName: !Ref BranchName
-                OutputArtifactFormat: CODE_ZIP
-                DetectChanges: "true"
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref BranchName
+                OAuthToken: !Sub "{{resolve:secretsmanager:Outh-token-github::SecretString}}"
+                PollForSourceChanges: "false"
               OutputArtifacts: [{ Name: SourceOutput }]
         - Name: Build
           Actions:
@@ -185,6 +183,23 @@ Resources:
                 RoleArn: !GetAtt CloudFormationDeployRole.Arn
               RunOrder: 2
 
+  GitHubWebhook:
+    Type: AWS::CodePipeline::Webhook
+    Properties:
+      Name: github-webhook
+      TargetPipeline: !Ref Pipeline
+      TargetAction: GitHub_Source
+      TargetPipelineVersion: !GetAtt Pipeline.Version
+      RegisterWithThirdParty: true
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        # Dynamic reference pulls the generated value at deploy time
+        SecretToken: !Sub "{{resolve:secretsmanager:${WebhookSecret}::SecretString:token}}"
+      Filters:
+        - JsonPath: $.ref
+          MatchEquals: !Sub "refs/heads/${BranchName}"
+
 Outputs:
   PipelineName: { Value: !Ref Pipeline }
   ArtifactBucketName: { Value: !Ref ArtifactBucket }
+  WebhookSecretArn: { Value: !Ref WebhookSecret }
