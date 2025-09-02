@@ -1,0 +1,68 @@
+name: CodePipeline PR Check
+
+on:
+  pull_request:
+    branches: [ main ]   # adjust if your default branch is different
+
+concurrency:
+  group: cp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codepipeline:
+    name: codepipeline
+    environment: aws                  # <- your Environment that holds vars/secrets
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write                 # required for OIDC
+      contents: read
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}         
+      PIPELINE_NAME: 	my-pipeline-dev-Pipeline-TE7xfEPFoPdC            
+      API_URL: https://21i0wg1juh.execute-api.eu-west-1.amazonaws.com/frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ secrets.AWS_ASSUME_ROLE_ARN }}" ]; then
+            echo "Missing secret: AWS_ASSUME_ROLE_ARN"; exit 1; fi
+          if [ -z "${AWS_REGION}" ]; then
+            echo "Missing env/variable: AWS_REGION (set in Environment 'aws')"; exit 1; fi
+          echo "Using pipeline: ${PIPELINE_NAME}, region: ${AWS_REGION}"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ASSUME_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Ensure CodePipeline exists
+        run: |
+          set -e
+          aws codepipeline get-pipeline --name "${PIPELINE_NAME}" >/dev/null
+          echo "Pipeline '${PIPELINE_NAME}' exists."
+
+      - name: POST to API and assert response (bash)
+        run: |
+          uri="${API_URL}"
+          payload="test/payload.json"
+
+          # Save headers/body, capture HTTP status
+          status=$(curl -sS -i -X POST "$uri" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$payload" \
+            -D resp-headers.txt \
+            -o resp.json \
+            -w "%{http_code}")
+
+          echo "HTTP $status"
+          echo "=== Headers ==="; cat resp-headers.txt
+          echo "=== Body ===";    cat resp.json
+
+          [ "$status" -eq 201 ] || { echo "Unexpected HTTP status: $status"; exit 1; }
+
