@@ -2,7 +2,7 @@
 name: Deploy with OIDC
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }} 
+  AWS_REGION: ${{ aws.AWS_REGION }} 
 
 on:
   pull_request:
