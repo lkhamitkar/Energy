@@ -20,7 +20,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}         
       PIPELINE_NAME: 	my-pipeline-dev-Pipeline-TE7xfEPFoPdC            
-      API_URL: https://epz2noq2b6.execute-api.eu-west-1.amazonaws.com/hello
+      API_URL: https://21i0wg1juh.execute-api.eu-west-1.amazonaws.com/frontend
 
     steps:
       - name: Checkout
@@ -64,5 +64,5 @@ jobs:
           echo "=== Headers ==="; cat resp-headers.txt
           echo "=== Body ===";    cat resp.json
 
-          [ "$status" -eq 200 ] || { echo "Unexpected HTTP status: $status"; exit 1; }
+          [ "$status" -eq 201 ] || { echo "Unexpected HTTP status: $status"; exit 1; }
 
