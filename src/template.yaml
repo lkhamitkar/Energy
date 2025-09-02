@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: CFN/SAM - HTTP API for Hello, EventBridge -> Step Functions (LambdaA loop -> LambdaB)
+Description: CFN/SAM - HTTP API for Lambda A, EventBridge -> Step Functions (LambdaA loop -> LambdaB)
 
 Parameters:
   EventBusName:
@@ -25,7 +25,7 @@ Parameters:
     Description: S3 bucket used by 'cloudformation package' / SAM package
   RecordDynamoTableNameArn:
     Type: String
-    Default: arn:aws:dynamodb:eu-west-1:452344168826:table/records_table
+    Default: arn:aws:dynamodb:eu-west-1:452344168826:table/records_table # can also be assesed by os.environ['RecordDynamoTableName']
     Description: Dynamo Db table name to store order records
 
 
@@ -208,13 +208,13 @@ Resources:
       ApiId: !Ref HttpApi
       IntegrationType: AWS_PROXY
       IntegrationUri: !GetAtt PostLambdaFunction.Arn
-      PayloadFormatVersion: '1.0'
+      PayloadFormatVersion: '1.0' # version 1.0 support httpMethod
 
   PostLambdaRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
-      RouteKey: 'POST /hello'
+      RouteKey: 'POST /frontend'
       Target: !Sub 'integrations/${PostLambdaIntegration}'
 
   PostLambdaStageDefault:
@@ -335,7 +335,7 @@ Outputs:
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
   PostLambdaInvokeUrl:
     Description: POST URL for PostLambdaFunction
-    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/hello'
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/frontend'
   PostLambdaFunctionName:
     Description: Name of PostLambda Function
     Value: !Ref PostLambdaFunction

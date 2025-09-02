@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CodePipeline (GitHub main -> Dev) with CodeBuild + CloudFormation via GitHub OAuth (HMAC auto-generated)
+Description: CodePipeline (GitHub main -> Dev) with CodeBuild + CloudFormation via GitHub OAuthToken
 
 Parameters:
   GitHubOwner:
@@ -8,7 +8,7 @@ Parameters:
   GitHubRepo:
     Type: String
     Default: energy
-  BranchName:
+  MainBranchName:
     Type: String
     Default: main
     Description: Branch that auto-deploys to Dev
@@ -33,6 +33,15 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      Retain: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAllAfter1Day
+            Status: Enabled
+            Filter: {}                 # apply to all objects
+            ExpirationInDays: 1        
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
 
   PipelineRole:
     Type: AWS::IAM::Role
@@ -79,7 +88,7 @@ Resources:
         Version: '2012-10-17'
         Statement: [{ Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }]
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess # includes S3 full access and service role
       Policies:
         - PolicyName: cfn-packaging
           PolicyDocument:
@@ -142,7 +151,7 @@ Resources:
               Configuration:
                 Owner: !Ref GitHubOwner
                 Repo: !Ref GitHubRepo
-                Branch: !Ref BranchName
+                Branch: !Ref MainBranchName
                 OAuthToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString:oauthtoken}}"
                 PollForSourceChanges: "false"
               OutputArtifacts: [{ Name: SourceOutput }]
@@ -189,7 +198,7 @@ Resources:
         SecretToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString:webhooktoken}}"
       Filters:
         - JsonPath: $.ref
-          MatchEquals: !Sub "refs/heads/${BranchName}"
+          MatchEquals: !Sub "refs/heads/${MainBranchName}"
 
 Outputs:
   PipelineName: { Value: !Ref Pipeline }
