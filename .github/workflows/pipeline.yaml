@@ -20,9 +20,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}         
       PIPELINE_NAME: 	my-pipeline-dev-Pipeline-TE7xfEPFoPdC            
-      SOURCE_ACTION_NAME: GitHub_Source                 
-      WAIT_SECONDS: "20"
-      MAX_LOOPS: "90"                            # ~30 minutes (90 * 20 sec)
+      API_URL: https://epz2noq2b6.execute-api.eu-west-1.amazonaws.com/hello
 
     steps:
       - name: Checkout
@@ -49,73 +47,22 @@ jobs:
           aws codepipeline get-pipeline --name "${PIPELINE_NAME}" >/dev/null
           echo "Pipeline '${PIPELINE_NAME}' exists."
 
-      - name: Start pipeline execution with PR commit
-        id: start
+      - name: POST to API and assert response (bash)
         run: |
-          set -e
-          COMMIT="${GITHUB_SHA}"
-          echo "Starting execution for commit ${COMMIT}"
+          uri="${API_URL}"
+          payload="test/payload.json"
 
-          # Try to override the source revision so the pipeline runs this PR's commit.
-          # This works when your Source action uses CodeStar Connections (recommended).
-          set +e
-          EXEC_ID=$(aws codepipeline start-pipeline-execution \
-            --name "${PIPELINE_NAME}" \
-            --source-revisions actionName="${SOURCE_ACTION_NAME}",revisionId="${COMMIT}" \
-            --query 'pipelineExecutionId' --output text 2>/tmp/cp.err)
-          RC=$?
-          set -e
+          # Save headers/body, capture HTTP status
+          status=$(curl -sS -i -X POST "$uri" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$payload" \
+            -D resp-headers.txt \
+            -o resp.json \
+            -w "%{http_code}")
 
-          if [ $RC -ne 0 ] || [ "${EXEC_ID}" = "None" ]; then
-            echo "Revision override failed or unsupported for your source. Falling back to default source (usually the branch configured in the pipeline)."
-            echo "aws error:"
-            cat /tmp/cp.err || true
-            EXEC_ID=$(aws codepipeline start-pipeline-execution \
-              --name "${PIPELINE_NAME}" \
-              --query 'pipelineExecutionId' --output text)
-          fi
+          echo "HTTP $status"
+          echo "=== Headers ==="; cat resp-headers.txt
+          echo "=== Body ===";    cat resp.json
 
-          if [ -z "${EXEC_ID}" ] || [ "${EXEC_ID}" = "None" ]; then
-            echo "Failed to start pipeline execution"; exit 1
-          fi
+          [ "$status" -eq 200 ] || { echo "Unexpected HTTP status: $status"; exit 1; }
 
-          echo "EXEC_ID=${EXEC_ID}" >> "$GITHUB_OUTPUT"
-          echo "Started execution: ${EXEC_ID}"
-
-      - name: Wait for pipeline to finish
-        run: |
-          set -e
-          EXEC_ID="${{ steps.start.outputs.EXEC_ID }}"
-          echo "Waiting for execution ${EXEC_ID} ..."
-          LOOPS=0
-          while true; do
-            STATUS=$(aws codepipeline get-pipeline-execution \
-              --pipeline-name "${PIPELINE_NAME}" \
-              --pipeline-execution-id "${EXEC_ID}" \
-              --query 'pipelineExecution.status' --output text || echo "Unknown")
-
-            echo "Status: ${STATUS}"
-            case "$STATUS" in
-              Succeeded) echo "Pipeline succeeded."; exit 0 ;;
-              Failed|Superseded|Canceled) echo "Pipeline finished with status: $STATUS"; exit 1 ;;
-              InProgress|Stopping|Stopped|Unknown) ;;
-              *) echo "Unexpected status: $STATUS";;
-            esac
-
-            LOOPS=$((LOOPS+1))
-            if [ "$LOOPS" -ge "${MAX_LOOPS}" ]; then
-              echo "Timed out waiting for pipeline (>$(( ${WAIT_SECONDS} * ${MAX_LOOPS} / 60 )) minutes)."; exit 1
-            fi
-            sleep "${WAIT_SECONDS}"
-          done
-
-      # Optional: show last action results on failure to help debugging
-      - name: Show failed actions (best-effort)
-        if: failure()
-        run: |
-          EXEC_ID="${{ steps.start.outputs.EXEC_ID }}"
-          echo "Execution details:"
-          aws codepipeline list-action-executions \
-            --pipeline-name "${PIPELINE_NAME}" \
-            --filter pipelineExecutionId="${EXEC_ID}" \
-            --max-results 50

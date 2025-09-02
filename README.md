@@ -147,9 +147,9 @@ artifacts:
 
 ## Configuration Notes
 - **GitHub Integration** : Integrated with Oauth. Refer [GitHub Docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app) for more information.
-- **APIGateway Test**:  Curl locally and test the Response with bash, powershell. Traverse through test folder nand execute
+- **APIGateway Test**:  Curl locally and test the Response with bash, powershell. Traverse through test folder and execute
     ```powershell
-    curl.exe -i -X POST $uri `-H "Content-Type: application/json" ` --data-binary "@payload.json"
+    curl.exe -i -X POST https://epz2noq2b6.execute-api.eu-west-1.amazonaws.com/hello `-H "Content-Type: application/json" ` --data-binary "@payload.json"
     ```
     ![API Response](img/api_response.png)
 - **Schedule**: EventBridge default is **every 2 minutes** (adjust in the template or via parameters).
@@ -252,3 +252,4 @@ Deploy safety:
 Use SAM --capabilities CAPABILITY_IAM + change sets; for Step Functions/Lambda, consider canaries or gradual rollout where relevant.
 
 **Github Actions**
+Enabled action for 
