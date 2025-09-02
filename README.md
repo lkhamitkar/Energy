@@ -18,26 +18,37 @@ Serverless application for participating in an energy-market auction using AWS. 
 
 
 ## Project Structure
-
 ```
 Energy/
-├── buildspec.yaml                # CodeBuild spec: SAM build + package (outputs packaged.yaml)
-├── README.md                     # Project documentation
-├── Energy_workflow.png           # Architecture/workflow diagram
+├── buildspec.yaml                # CI/CD build specification for AWS CodeBuild
+├── README.md                     # Project documentation (this file)
+├── img/
+│   ├── Energy_workflow.png       # Workflow diagram
+│   ├── state_machine.png         # State machine response diagram
+│   ├── api_response.png          # Example API response
+│   ├── slack_response.png        # Example Slack response
+│   └── slack_notification.png    # Example Slack notification
+├── test/
+│   ├── payload.json              # Sample API payload for testing
+│   ├── slackpayload.json         # Example Slack message payload
+│   └── ...                       # Additional test files/scripts
+├── .github/
+│   └── workflows/
+│       └── ci.yml                # GitHub Actions workflow for CI/CD
 └── src/
-    ├── payload.json              # Sample API payload
-    ├── pipeline-dev.yaml         # CodePipeline (dev) definition
+    ├── payload.json              # Sample API payload for testing
     ├── slackpayload.json         # Example Slack message payload
-    ├── template.yaml             # SAM/CloudFormation template (infrastructure)
+    ├── pipeline-dev.yaml         # CodePipeline definition (dev)
+    ├── template.yaml             # SAM/CloudFormation infrastructure template
     ├── lambda_a/
-    │   ├── app.py
-    │   └── requirements.txt
+    │   ├── app.py                # Lambda A source code
+    │   └── requirements.txt      # Lambda A dependencies
     ├── lambda_b/
-    │   ├── app.py
-    │   └── requirements.txt
+    │   ├── app.py                # Lambda B source code
+    │   └── requirements.txt      # Lambda B dependencies
     └── post_lambda/
-        ├── app.py                
-        └── requirements.txt
+        ├── app.py                # Post Lambda source code
+        └── requirements.txt      # Post Lambda dependencies
 ```
 
 ---
@@ -147,6 +158,8 @@ artifacts:
 
 ## Configuration Notes
 - **GitHub Integration** : Integrated with Oauth. Refer [GitHub Docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app) for more information.
+- **GitHub Webhooks** : Configuration of GitHub Webhooks used to automate workflows by triggering GitHub Actions in response to repository events such as pushes, pull requests, or releases. Webhooks are set up in the repository settings to send event payloads to a API GW URL, enabling integration with external services.
+    ![CodePipeline Test Response](img/codepipeline_test.png) ![Github Webhook Test Response](img/github_webhook_checks.png) 
 - **APIGateway Test**:  Curl locally and test the Response with bash, powershell. Traverse through test folder and execute
     ```powershell
     curl.exe -i -X POST https://epz2noq2b6.execute-api.eu-west-1.amazonaws.com/hello `-H "Content-Type: application/json" ` --data-binary "@payload.json"
@@ -218,7 +231,7 @@ Lambda_A can loop forever. Add TimeoutSeconds/HeartbeatSeconds, a max-attempt co
 Tracing on by default: 
 Enable X-Ray for Lambda and Step Functions to trace A→B executions and API calls end-to-end. 
 Event triggers:
-We already have a schedule; if we keep the optional custom EventBus params,  we use them with an EventPattern rule (source/detail-type) 
+We already have a schedule; if we keep the optional custom EventBus params,  we use them with an EventPattern rule (source/detail-type).
 
 **API Gateway**
 Auth:
@@ -243,7 +256,7 @@ store webhooks/API keys in Secrets Manager or SSM Parameter Store (SecureString)
 Metrics & alarms:
 Create CloudWatch Alarms for Lambda Errors/Throttles, Step Functions ExecutionsFailed/TimedOut, and route to an SNS topic (Slack via webhook).
 Structured logs:
-JSON logs with request IDs, enable log retention (30 days) explicitly for all log groups
+JSON logs with request IDs, enable log retention (30 days) explicitly for all log groups.
 
 **CICD**
 Multi-env pipelines:
@@ -252,4 +265,4 @@ Deploy safety:
 Use SAM --capabilities CAPABILITY_IAM + change sets; for Step Functions/Lambda, consider canaries or gradual rollout where relevant.
 
 **Github Actions**
-Enabled action for 
+Github Pipelines can be extended to test the pipeline execution with the current commit changes (only possible with code connections).
