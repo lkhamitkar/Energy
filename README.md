@@ -101,7 +101,7 @@ Energy/
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/lkhamitkar/energy.git
+   git clone https://github.com/repo
    cd energy
    ```
 2. **Review functions & template**
