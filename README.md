@@ -251,3 +251,4 @@ Promote from dev→staging→prod with parameter overrides, per-env packaging bu
 Deploy safety:
 Use SAM --capabilities CAPABILITY_IAM + change sets; for Step Functions/Lambda, consider canaries or gradual rollout where relevant.
 
+**Github Actions**
