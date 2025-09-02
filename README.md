@@ -107,7 +107,7 @@ Energy/
 2. **Review functions & template**
    - Browse `src/` and `src/template.yaml`.
    - Install dependencies for lambda
-        ```bash
+        ```
         cd src/lambda_a && pip install -r requirements.txt
         cd ../lambda_b && pip install -r requirements.txt
         cd ../post_lambda && pip install -r requirements.txt
@@ -161,8 +161,8 @@ artifacts:
 - **GitHub Webhooks** : Configuration of GitHub Webhooks used to automate workflows by triggering GitHub Actions in response to repository events such as pushes, pull requests, or releases. Webhooks are set up in the repository settings to send event payloads to a API GW URL, enabling integration with external services.
     ![CodePipeline Test Response](img/codepipeline_test.png) ![Github Webhook Test Response](img/github_webhook_checks.png) 
 - **APIGateway Test**:  Curl locally and test the Response with bash, powershell. Traverse through test folder and execute
-    ```powershell
-    curl.exe -i -X POST https://epz2noq2b6.execute-api.eu-west-1.amazonaws.com/hello `-H "Content-Type: application/json" ` --data-binary "@payload.json"
+    ```
+    curl.exe -i -X POST https://0hi560w5sk.execute-api.eu-west-1.amazonaws.com/frontend `-H "Content-Type: application/json" ` --data-binary "@payload.json"
     ```
     ![API Response](img/api_response.png)
 - **Schedule**: EventBridge default is **every 2 minutes** (adjust in the template or via parameters).
@@ -205,7 +205,7 @@ artifacts:
   - (If you rely on expiry) TTL is enabled and the TTL attribute is being set.
 - **Executions run for a long time / never end** – make sure `lambda_a` returns a boolean `results`. Add a max-attempts counter or an overall execution timeout. Inspect the Step Functions execution history and CloudWatch logs for `lambda_a`. For larger workloads check the Memory and CPU.
 - **EventBridge didn’t trigger the state machine** – confirm the rule is `ENABLED`, the `ScheduleExpression` is valid, and the target ARN is your state machine. Ensure the `EventBridgeToSFNRole` has `states:StartExecution` and no SCP/permission boundary is blocking it.
-- **API 403/404/500** – verify you are calling `POST /frontend` on the `$default` stage. Check that the Lambda permission `PostLambdaPermissionForHttpApi` SourceArn matches `.../${HttpApi}/*/*`. Ensure the integration uses payload format **1.0** and your Lambda returns a proper **proxy response**.
+- **API 403/404/500** – verify you are calling `https://0hi560w5sk.execute-api.eu-west-1.amazonaws.com/frontend` on the `$default` stage. Check that the Lambda permission `PostLambdaPermissionForHttpApi` SourceArn matches `.../${HttpApi}/*/*`. Ensure the integration uses payload format **1.0** and your Lambda returns a proper **proxy response**.
 - **Malformed Lambda proxy response** – for HTTP API proxy, `body` must be a **string**. JSON-serialize it, e.g. `json.dumps({...})`. Set `isBase64Encoded=true` only for binary responses.
 - **Throttling/429** – `InvokeA` already retries certain Lambda errors. Consider increasing `RetrySeconds`, adding exponential backoff, or setting reserved concurrency on the functions.
 
@@ -266,3 +266,15 @@ Use SAM --capabilities CAPABILITY_IAM + change sets; for Step Functions/Lambda, 
 
 **Github Actions**
 Github Pipelines can be extended to test the pipeline execution with the current commit changes (only possible with code connections).
+
+**Code Pipeline**
+Improve the robustness of CodePipeline and add DeletionPolicy: Retain to any resources that should be kept if the stack is removed.
+
+To deploy the pipeline manually, run this command:
+```
+aws cloudformation deploy --template-file pipeline-dev.yaml --stack-name my-pipeline-dev --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+```
+
+Pipeline execution is automatically scheduled at every push at "main" branch of git repository but to run it manually
+1. Push the code to github
+2. Run ```aws codepipeline start-pipeline-execution --name <current pipeline name>```
