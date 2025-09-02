@@ -1,0 +1,121 @@
+name: CodePipeline PR Check
+
+on:
+  pull_request:
+    branches: [ main ]   # adjust if your default branch is different
+
+concurrency:
+  group: cp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codepipeline:
+    name: codepipeline
+    environment: aws                  # <- your Environment that holds vars/secrets
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write                 # required for OIDC
+      contents: read
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}         
+      PIPELINE_NAME: 	my-pipeline-dev-Pipeline-TE7xfEPFoPdC            
+      SOURCE_ACTION_NAME: GitHub_Source                 
+      WAIT_SECONDS: "20"
+      MAX_LOOPS: "90"                            # ~30 minutes (90 * 20 sec)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ secrets.AWS_ASSUME_ROLE_ARN }}" ]; then
+            echo "Missing secret: AWS_ASSUME_ROLE_ARN"; exit 1; fi
+          if [ -z "${AWS_REGION}" ]; then
+            echo "Missing env/variable: AWS_REGION (set in Environment 'aws')"; exit 1; fi
+          echo "Using pipeline: ${PIPELINE_NAME}, region: ${AWS_REGION}"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ASSUME_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}
+
+      - name: Ensure CodePipeline exists
+        run: |
+          set -e
+          aws codepipeline get-pipeline --name "${PIPELINE_NAME}" >/dev/null
+          echo "Pipeline '${PIPELINE_NAME}' exists."
+
+      - name: Start pipeline execution with PR commit
+        id: start
+        run: |
+          set -e
+          COMMIT="${GITHUB_SHA}"
+          echo "Starting execution for commit ${COMMIT}"
+
+          # Try to override the source revision so the pipeline runs this PR's commit.
+          # This works when your Source action uses CodeStar Connections (recommended).
+          set +e
+          EXEC_ID=$(aws codepipeline start-pipeline-execution \
+            --name "${PIPELINE_NAME}" \
+            --source-revisions actionName="${SOURCE_ACTION_NAME}",revisionId="${COMMIT}" \
+            --query 'pipelineExecutionId' --output text 2>/tmp/cp.err)
+          RC=$?
+          set -e
+
+          if [ $RC -ne 0 ] || [ "${EXEC_ID}" = "None" ]; then
+            echo "Revision override failed or unsupported for your source. Falling back to default source (usually the branch configured in the pipeline)."
+            echo "aws error:"
+            cat /tmp/cp.err || true
+            EXEC_ID=$(aws codepipeline start-pipeline-execution \
+              --name "${PIPELINE_NAME}" \
+              --query 'pipelineExecutionId' --output text)
+          fi
+
+          if [ -z "${EXEC_ID}" ] || [ "${EXEC_ID}" = "None" ]; then
+            echo "Failed to start pipeline execution"; exit 1
+          fi
+
+          echo "EXEC_ID=${EXEC_ID}" >> "$GITHUB_OUTPUT"
+          echo "Started execution: ${EXEC_ID}"
+
+      - name: Wait for pipeline to finish
+        run: |
+          set -e
+          EXEC_ID="${{ steps.start.outputs.EXEC_ID }}"
+          echo "Waiting for execution ${EXEC_ID} ..."
+          LOOPS=0
+          while true; do
+            STATUS=$(aws codepipeline get-pipeline-execution \
+              --pipeline-name "${PIPELINE_NAME}" \
+              --pipeline-execution-id "${EXEC_ID}" \
+              --query 'pipelineExecution.status' --output text || echo "Unknown")
+
+            echo "Status: ${STATUS}"
+            case "$STATUS" in
+              Succeeded) echo "Pipeline succeeded."; exit 0 ;;
+              Failed|Superseded|Canceled) echo "Pipeline finished with status: $STATUS"; exit 1 ;;
+              InProgress|Stopping|Stopped|Unknown) ;;
+              *) echo "Unexpected status: $STATUS";;
+            esac
+
+            LOOPS=$((LOOPS+1))
+            if [ "$LOOPS" -ge "${MAX_LOOPS}" ]; then
+              echo "Timed out waiting for pipeline (>$(( ${WAIT_SECONDS} * ${MAX_LOOPS} / 60 )) minutes)."; exit 1
+            fi
+            sleep "${WAIT_SECONDS}"
+          done
+
+      # Optional: show last action results on failure to help debugging
+      - name: Show failed actions (best-effort)
+        if: failure()
+        run: |
+          EXEC_ID="${{ steps.start.outputs.EXEC_ID }}"
+          echo "Execution details:"
+          aws codepipeline list-action-executions \
+            --pipeline-name "${PIPELINE_NAME}" \
+            --filter pipelineExecutionId="${EXEC_ID}" \
+            --max-results 50
