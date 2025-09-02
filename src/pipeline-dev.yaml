@@ -17,7 +17,7 @@ Parameters:
     Default: build-packaging-eu-west-1
   DevStackName:
     Type: String
-    Default: my-app-dev-test
+    Default: my-app-dev-stack
   TemplateFile:
     Type: String
     Default: template.yaml
@@ -29,16 +29,16 @@ Parameters:
 Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
-      DeletionPolicy: Retain
       LifecycleConfiguration:
         Rules:
           - Id: ExpireAllAfter1Day
             Status: Enabled
-            Filter: {}                 # apply to all objects
+            Prefix: ""                 # apply to all objects
             ExpirationInDays: 1        
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 1
