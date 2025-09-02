@@ -1,0 +1,91 @@
+name: CFN Ephemeral Deploy (on merge to main)
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]   # fire when PRs close; we'll gate on "merged == true" below
+
+concurrency:
+  group: cfn-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: eu-west-1                           # <-- change if needed
+  PACKAGE_BUCKET: build-packaging-eu-west-1       # <-- pre-created S3 bucket for packaging
+  TEMPLATE_PATH: src/template.yaml                # <-- your template location
+  PACKAGED_TEMPLATE: packaged.yaml
+  # Optional parameter overrides (comma/space separated key=value)
+  # Example: 'orderResultBucketName=order-details-energy RecordDynamoTableNameArn=arn:aws:dynamodb:eu-west-1:123456789012:table/records_table'
+  CFN_PARAMETER_OVERRIDES: ""
+
+jobs:
+  deploy-and-teardown:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write       # for OpenID Connect (recommended)
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Configure AWS creds: either assume a role via OIDC, or use access keys (not recommended).
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ASSUME_ROLE_ARN }}   # <-- set this repo secret
+
+      - name: Show AWS CLI version
+        run: aws --version
+
+      - name: Package SAM/CFN template (uploads local CodeUri to S3)
+        working-directory: src
+        run: |
+          aws cloudformation package \
+            --template-file "${{ env.TEMPLATE_PATH }}" \
+            --s3-bucket "${{ env.PACKAGE_BUCKET }}" \
+            --output-template-file "../${{ env.PACKAGED_TEMPLATE }}"
+
+      - name: Generate unique stack name
+        id: names
+        run: |
+          STACK="energy-ci-${{ github.run_id }}-${{ github.run_attempt }}"
+          echo "STACK_NAME=$STACK" >> $GITHUB_OUTPUT
+
+      - name: Deploy stack (waits for completion)
+        run: |
+          set -e
+          PARAMS=""
+          if [ -n "${{ env.CFN_PARAMETER_OVERRIDES }}" ]; then
+            # Convert space/comma separated to --parameter-overrides format
+            PARAMS="--parameter-overrides ${{ env.CFN_PARAMETER_OVERRIDES }}"
+          fi
+
+          aws cloudformation deploy \
+            --template-file "${{ env.PACKAGED_TEMPLATE }}" \
+            --stack-name "${{ steps.names.outputs.STACK_NAME }}" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            $PARAMS
+
+
+      # Always attempt teardown, even if deploy or tests fail
+      - name: Delete stack (always)
+        if: always()
+        run: |
+          set -e
+          STACK="${{ steps.names.outputs.STACK_NAME }}"
+          # If stack exists, delete it and wait
+          if aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
+            echo "Deleting $STACK ..."
+            aws cloudformation delete-stack --stack-name "$STACK"
+            echo "Waiting for delete to complete ..."
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+            echo "Stack deleted."
+          else
+            echo "Stack $STACK does not exist or never created; skipping delete."
+          fi

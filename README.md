@@ -1,97 +1,253 @@
-# Coding Challenge Guidelines
-## Legend
-Our organization is participating in an energy market auction and has a service that generates and submits orders to the Auction Platform provider. Software Engineers and Data Scientists have just completed working on the logic of the service that accepts orders via an API and stores them in a DB. Another service then submits them to the Auction Platform. Data Scientists came up with the logic for Data Pipeline to retrieve and process the results and store them in an S3 bucket. You are asked to provide the Infrastructure to deploy all required resources to AWS using aws-cdk for IaC (with Typescript).
-## The task
+# Energy
 
-1. There is an API lambda that processes POST requests and stores data in a Database.
-Request body example:
-` 
-[ { "record_id": "unique_id_1", "parameter_1": "abc", "parameter_2": 4 },{ "record_id": "unique_id_2", "parameter_1": "def", "parameter_2": 2.1 } ]
-`
+Serverless application for participating in an energy-market auction using AWS. The repo includes Lambda functions, configuration files, and infrastructure templates (SAM/CloudFormation).
 
-The Data Pipeline should be triggered by schedule(scheduler) and execute several lambdas in a row (step function). Lambda A that randomly generates True/False value and returns:
+![Energy workflow diagram](img/Energy_workflow.png)
+
+
+## Table of Contents
+
+- [Project Structure](#project-structure)
+- [Main Components](#main-components)
+- [Workflow](#workflow)
+- [Infrastructure & Deployment](#infrastructure--deployment)
+- [Getting Started](#getting-started)
+- [CI/CD Build (buildspec.yaml)](#cicd-build-buildspecyaml)
+- [Configuration Notes](#configuration-notes)
+- [Troubleshooting](#troubleshooting)
+
+
+## Project Structure
 
 ```
-// Lambda with ready results 
-{ 
-  "results": true,
-  "orders": [
-   { 
-      "order": "accepted"
-   },
-   {
-     "order": "rejected" 
-   }
-   ]
- } 
-// OR 
-// Lambda with results not ready 
-{ 
-  "results": false 
-}
+Energy/
+├── buildspec.yaml                # CodeBuild spec: SAM build + package (outputs packaged.yaml)
+├── README.md                     # Project documentation
+├── Energy_workflow.png           # Architecture/workflow diagram
+└── src/
+    ├── payload.json              # Sample API payload
+    ├── pipeline-dev.yaml         # CodePipeline (dev) definition
+    ├── slackpayload.json         # Example Slack message payload
+    ├── template.yaml             # SAM/CloudFormation template (infrastructure)
+    ├── lambda_a/
+    │   ├── app.py
+    │   └── requirements.txt
+    ├── lambda_b/
+    │   ├── app.py
+    │   └── requirements.txt
+    └── post_lambda/
+        ├── app.py                
+        └── requirements.txt
 ```
 
-Lambda B that gets order from the event and raised an error, if the order status is rejected. Otherwise, it should be able to store results in S3 Bucket called “order-results” .
+---
 
-## Requirements:
-The data pipeline should fulfill the following requirements: 
+## Main Components
 
-- There should be a validation of the Lambda A output checking the results field. If the results are false, Lambda A should be re-triggered until the results are true. --- step function-lambda5min,scheduler s3 read and process, recurring after 5 min.
+### Lambda Functions
+- **post_lambda** (`src/post_lambda/app.py`): HTTP/API requests to Lambda that validates and stores incoming orders in **DynamoDB**. Items are written with a **24-hour TTL** to automatically expire old orders.
+- **lambda_a** (`src/lambda_a/app.py`): Processes orders and returns a boolean `result`. The Step Functions state machine **waits** and **retries** if `result=false` (bounded by max attempts).
+- **lambda_b** (`src/lambda_b/app.py`): Consumes the outcome from Lambda A.  
+  - **Accepted** → writes results to an **S3 results bucket** (e.g., `order-results`).  
+  - **Rejected/Error** → raises an error that triggers a **notification** to Slack as well as stores logs in CloudWatch.
 
-- If Lambda B raises an error, there should be a notification sent to a Slack Channel or similar app (don’t have to link the actual messaging app).
+### Templates
+- **buildspec.yaml**: CodeBuild steps to `sam build` (in `./src`) and `sam package` to an S3 **packaging** bucket; generates `packaged.yaml` at repo root (artifact for deployment).
+- **pipeline-dev.yaml**: Creates **CodePipeline** definition for development.
+- **template.yaml**: SAM/CloudFormation template defining API Gateway, Lambdas, Step Functions, EventBridge, DynamoDB, IAM, S3, and CloudWatch.
+- **payload.json / slackpayload.json**: Sample payloads for API and Slack.
 
-- Data in the database should expire after 24 hours. 
+---
 
-deployment(- Create AWS deployment Pipeline that deploys the app from a GitHub repo to our AWS account using CodePipeline (we provide the base code).
+## Workflow
 
-- All merges to master should automatically deploy the code to Dev environment.
+1. **Order Submission (API)**
+   - **API Gateway** invokes **post_lambda**, which validates and stores orders in **DynamoDB** with **TTL=24h**.
+2. **Scheduled Processing**
+   - **EventBridge rule** runs on a **configurable schedule** (default: **every 2 minutes**) and starts the **Step Functions** state machine.
+3. **State Machine**
+   - **Invoke A** → `lambda_a` evaluates the order and returns `result: true|false`.
+     - If `false`, **Wait** (e.g., `RetrySeconds`) and **Retry** up to a configured maximum.
+     - If `true` , proceeds to `Invoke B`.
+   - **Invoke B** → `lambda_b` handle outcomes:
+     - **Accepted** → store results in the **S3 results bucket** (parameter such as `orderResultBucketName`).
+     - **Rejected/Error** → raise error → send **Slack** notification (based on `test/slackpayload.json`).
+     ![State Machine Response](img/state_machine.png)
 
-{
-    "EvaluationResults": [
-        {
-            "EvalActionName": "codeconnections:UseConnection",
-            "EvalResourceName": "arn:aws:codeconnections:eu-west-1:452344168826:connection/5e7ab4ed-14f3-4752-8091-b2850b02343c",
-            "EvalDecision": "implicitDeny",
-            "MatchedStatements": [],
-            "MissingContextValues": [],
-            "OrganizationsDecisionDetail": {
-                "AllowedByOrganizations": false
-            }
-        }
-    ]
-}
 
-- Create a simple GitHub Actions workflow to run on merge to master.)
+## Infrastructure & Deployment
 
-- (Optional) Write tests for aws cdk constructs and ensure that the tests are executed in GitHub Actions stage.
-- (Optional) We should receive a Slack notification (don’t have to link the actual messaging app) if the Deployment Pipeline fails.
+- **SAM/CloudFormation (`src/template.yaml`)** defines:
+  - API Gateway, Lambda functions, Step Functions, EventBridge, DynamoDB (with TTL), S3 buckets, IAM roles/policies, and CloudWatch Logs.
+- **CI/CD**:
+  - **CodeBuild** uses `buildspec.yaml` to compile and package; `sam package` uploads to an S3 **packaging** bucket (e.g., `build-packaging-eu-west-1`) and writes `packaged.yaml` at the repo root.
+  - **CodePipeline** (e.g., from `src/pipeline-dev.yaml`) consumes the artifact **`packaged.yaml`** and deploys via CloudFormation/SAM.
 
-### Tools
+> **Note:** The **packaging** S3 bucket used by `sam package` is different from the **results** bucket used by Lambda B.
 
-List of tools:
 
-- AWS (Serverless)
-- Python
-- CDK (Typescript)
-- Github Actions/Code Suites
+## Getting Started
 
-### Important information 
-- The whole solution should be serverless.
-- Code for Lambda A, B and post has been provided. The provided Lambda code should only be completed and not modified.
-- Feel free to add additional Lambda Functions if deemed necessary.
-- Everything should be deployed to *eu-west-1* region.
-- If additional IAM permissions are needed, feel free to reach out to us to update the designated role.
-- We will provide the AWS sandbox environment for deploying the solution. We will share it with your email address.
-- CodeSubmit is a simple Git hosting platform that we use for case challenges. You can push your commits there, but you will also need a GitHub repository while working on the task. Feel free to add a second remote to your local repository and push to GitHub as well (e.g., `git remote add github <your GitHub URL>`). Just don’t forget to push your final solution to the CodeSubmit repository and submit it there—that’s the code we officially evaluate.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/lkhamitkar/energy.git
+   cd energy
+   ```
+2. **Review functions & template**
+   - Browse `src/` and `src/template.yaml`.
+   - Install dependencies for lambda
+        ```bash
+        cd src/lambda_a && pip install -r requirements.txt
+        cd ../lambda_b && pip install -r requirements.txt
+        cd ../post_lambda && pip install -r requirements.txt
+        ```
+3. **Prepare packaging bucket**
+   - Ensure an S3 bucket (e.g., `build-packaging-eu-west-1`) exists and CodeBuild can write to it.
+4. **Run CI build**
+   - Trigger your CodeBuild project that uses `buildspec.yaml` → artifact `packaged.yaml` will be produced at repo root.
+5. **Deploy**
+   - Use CodePipeline or `sam deploy`/CloudFormation to deploy **`packaged.yaml`**.
 
-## Evaluation
-- Software/Cloud Engineering Best Practices
-- Completeness: Are all features fully implemented?
-- AWS Services: Are the most suitable AWS services chosen?
-- Robustness/Scalability/Cost-Effectiveness: Does the solution demonstrate reliability, scalability, and cost-efficiency?
+**TIPS**
+- **Sample requests**
+  - Use `test/payload.json` to test the POST API locally or in a dev stack.
 
-## CodeSubmit
-Please organize, design, test, and document your code as if it were going into production - then push your changes to the master branch.
-Have fun coding!
 
-The Entrix Team
+## CI/CD Build (`buildspec.yaml`)
+
+This build spec:
+- Uses **Python 3.11** and installs **AWS SAM CLI**.
+- Builds the SAM app from `./src`.
+- Packages the stack to an S3 **packaging** bucket.
+- Emits **`packaged.yaml`** at the repo root as the sole artifact.
+
+```yaml
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - pip install --upgrade pip
+      - pip install aws-sam-cli
+  build:
+    commands:
+      - echo "== SAM build from ./src =="
+      - pwd && ls -la && ls -la src
+      - cd src
+      - sam build
+      - echo "== SAM package to repo root packaged.yaml =="
+      - sam package --s3-bucket build-packaging-eu-west-1 --output-template-file "$CODEBUILD_SRC_DIR/packaged.yaml"
+artifacts:
+  files:
+    - packaged.yaml
+```
+
+---
+
+## Configuration Notes
+- **GitHub Integration** : Integrated with Oauth. Refer [GitHub Docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app) for more information.
+- **APIGateway Test**:  Curl locally and test the Response with bash, powershell. Traverse through test folder nand execute
+    ```powershell
+    curl.exe -i -X POST $uri `-H "Content-Type: application/json" ` --data-binary "@payload.json"
+    ```
+    ![API Response](img/api_response.png)
+- **Schedule**: EventBridge default is **every 2 minutes** (adjust in the template or via parameters).
+- **Buckets**:
+  - **Packaging bucket** (for `sam package` artifacts) — e.g., `build-packaging-eu-west-1`.
+  - **Results bucket** (written by Lambda B) — parameter like `orderResultBucketName`.
+- **Permissions**:
+  - CodeBuild service role needs `s3:PutObject`, `s3:GetObject`, `s3:ListBucket` on the **packaging** bucket.
+  - Runtime roles for Lambdas/State Machine/EventBridge/DynamoDB/S3 are defined in `src/template.yaml`.
+- **Slack Notification** : Create a webhook URL for your workspace. To dispatch messages with your webhook URL, send your message in JSON as the body of an application/json POST request.
+    ```bash
+    curl -X POST -H 'Content-type: application/json' --data '{"text":"Hello, World!"}' URL
+    ``` 
+    ![Slack Response](img/slack_response.png)
+    Demo Notication:
+    ![Slack Notification](img/slack_notification.png)
+
+## Configuration tips
+
+**RetrySeconds** – Increase for less aggressive polling; decrease for faster convergence (watch costs and concurrency).
+**lambda_b resiliency** – Add Retry/Catch in the state machine to handle transient S3 issues and route failures to alarms/queues.
+**Event-driven start** – Add an EventBridge EventPattern rule using EventSource/EventDetailType if you want to kick off processing when post-lambda emits an event (instead of a schedule).
+**Security/observability** – Enable API access logs, auth (JWT/authorizer), X-Ray tracing, and tighter IAM scoping as needed. Best case is to use a RBAC stack, as we do not have abundant amount of roles and policies we are keeping it in  lite mode.
+**Secrets Store** - keys/tokens are encrypted at rest (KMS) and never live in plain text in code or build logs. We could have referenced AWS Systems Manager Parameter Store (SecureString) but while working with bigger code base its best to use Secret Manager.
+
+
+## Troubleshooting
+
+- **`sam: command not found`**  
+  Ensure `aws-sam-cli` installs successfully and the build image supports Python 3.11.
+- **`AccessDenied` uploading artifacts**  
+  Verify the **packaging bucket** exists and CodeBuild role has S3 write/list permissions.
+- **`packaged.yaml` missing in artifact**  
+  Confirm `--output-template-file "$CODEBUILD_SRC_DIR/packaged.yaml"` and `artifacts.files: packaged.yaml`.
+- **`AccessDenied` on S3** – confirm `orderResultBucketName` exists and the Lambda role has permissions (it does in the template; ensure bucket policy allows it if restricted).
+- **DynamoDB errors** – the table is **external**. Verify:
+  - The ARN (account/region/table name) is correct.
+  - The table exists and you are writing the right partition/sort keys.
+  - The Lambda role has the needed actions (PutItem, UpdateItem, GetItem, Query, Scan).
+  - (If you rely on expiry) TTL is enabled and the TTL attribute is being set.
+- **Executions run for a long time / never end** – make sure `lambda_a` returns a boolean `results`. Add a max-attempts counter or an overall execution timeout. Inspect the Step Functions execution history and CloudWatch logs for `lambda_a`. For larger workloads check the Memory and CPU.
+- **EventBridge didn’t trigger the state machine** – confirm the rule is `ENABLED`, the `ScheduleExpression` is valid, and the target ARN is your state machine. Ensure the `EventBridgeToSFNRole` has `states:StartExecution` and no SCP/permission boundary is blocking it.
+- **API 403/404/500** – verify you are calling `POST /frontend` on the `$default` stage. Check that the Lambda permission `PostLambdaPermissionForHttpApi` SourceArn matches `.../${HttpApi}/*/*`. Ensure the integration uses payload format **1.0** and your Lambda returns a proper **proxy response**.
+- **Malformed Lambda proxy response** – for HTTP API proxy, `body` must be a **string**. JSON-serialize it, e.g. `json.dumps({...})`. Set `isBase64Encoded=true` only for binary responses.
+- **Throttling/429** – `InvokeA` already retries certain Lambda errors. Consider increasing `RetrySeconds`, adding exponential backoff, or setting reserved concurrency on the functions.
+
+---
+
+## Final checklist for executing the first time:
+
+- [ ] AWS Configured and pulled the code
+- [ ] DynamoDB table exists and ARN is correct (`RecordDynamoTableNameArn`)
+- [ ] Results S3 bucket exists and is reachable (`orderResultBucketName`)
+- [ ] CodeBuild/packaging bucket exists for `sam package` (if using CI/CD)
+- [ ] Lambdas return the expected shapes (`lambda-a` → `{ "results": true|false }`)
+- [ ] EventBridge rule is **ENABLED**; Step Functions role can invoke Lambdas
+- [ ] API call uses `POST /frontend` and Lambda returns a valid proxy response
+- [ ] CloudWatch Logs show healthy invocations for API, Lambdas, and SFN
+
+---
+## Improvements Suggested
+**Architecture & State machine**
+
+Add timeouts:
+Lambda_A can loop forever. Add TimeoutSeconds/HeartbeatSeconds, a max-attempt counter in state, and a terminal “give-up” path (with alert). Also keep the transient-error Retry, but add Catch for non-retryable errors. 
+Tracing on by default: 
+Enable X-Ray for Lambda and Step Functions to trace A→B executions and API calls end-to-end. 
+Event triggers:
+We already have a schedule; if we keep the optional custom EventBus params,  we use them with an EventPattern rule (source/detail-type) 
+
+**API Gateway**
+Auth:
+Add a IdP or IAM, consider WAF for common exploits. 
+Input validation: attach JSON Schema request validation at the API, not only in code. It blocks bad inputs early and reduces Lambda invocations. 
+Access logs: enable access logs with careful field selection (PII)
+
+**Lambda**
+Layers & dependencies:
+If multiple functions share libs, move them to a Lambda Layer.
+
+**Data and Storege**
+S3 results bucket: enforce server-side encryption, versioning, Object Ownership and bucket policies that scope access to the Lambda role principal.
+
+**IAM & security**
+Least-privilege policies:
+DynamoDB to specific table, Step Functions to exact ARNs. Prefer resource-level conditions where possible. 
+Secrets:
+store webhooks/API keys in Secrets Manager or SSM Parameter Store (SecureString); fetch at runtime and grant only GetSecretValue/GetParameter to precise ARNs.
+
+**Logging**
+Metrics & alarms:
+Create CloudWatch Alarms for Lambda Errors/Throttles, Step Functions ExecutionsFailed/TimedOut, and route to an SNS topic (Slack via webhook).
+Structured logs:
+JSON logs with request IDs, enable log retention (30 days) explicitly for all log groups
+
+**CICD**
+Multi-env pipelines:
+Promote from dev→staging→prod with parameter overrides, per-env packaging buckets, and a manual approval gate before prod. 
+Deploy safety:
+Use SAM --capabilities CAPABILITY_IAM + change sets; for Step Functions/Lambda, consider canaries or gradual rollout where relevant.
+
