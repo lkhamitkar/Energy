@@ -19,8 +19,8 @@ jobs:
 
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}         
-      PIPELINE_NAME: 	my-pipeline-dev-Pipeline-TE7xfEPFoPdC            
-      API_URL: https://21i0wg1juh.execute-api.eu-west-1.amazonaws.com/frontend
+      PIPELINE_NAME: 	my-pipeline-dev-Pipeline-KhkH3FA2jh3N            
+      API_URL: https://0hi560w5sk.execute-api.eu-west-1.amazonaws.com/frontend
 
     steps:
       - name: Checkout
